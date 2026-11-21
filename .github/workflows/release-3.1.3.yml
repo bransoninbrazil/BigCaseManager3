@@ -2,7 +2,7 @@ name: Publish BigCaseManager3 3.1.3
 on:
   push:
     branches: [main]
-    paths: [manifest.json]
+    paths: [manifest.json, .github/workflows/release-3.1.3.yml]
   workflow_dispatch:
 
 permissions: {}
@@ -25,17 +25,25 @@ jobs:
           version=3.1.3
           assets=(manifest.json main.js styles.css)
           for file in "${assets[@]}"; do
-            gh api -H 'Accept: application/vnd.github.raw+json' \
-              "repos/$GH_REPO/contents/$file?ref=$GITHUB_SHA" > "$file"
-            test -s "$file"
+            curl --fail --silent --show-error --location --retry 3 --max-time 30 \
+              "https://raw.githubusercontent.com/$GH_REPO/$GITHUB_SHA/$file" -o "$file"
           done
-          jq -e --arg version "$version" \
-            '.version == $version and .id == "bigcase-manager-three"' manifest.json > /dev/null
+          sha256sum --check <<'CHECKSUMS'
+          d3b407b64a32d4977d4bf8f0b0a02fef3d69ddb4de84f264e01e13f21400c374  manifest.json
+          86b9c4fd2a3603fd7a9285a575e2d4070d3e4dae29fb7e72df4bb378fb8d8865  main.js
+          670ae66b4855a6a25a52ba5e99dd0296931a5769567e0c8efffc5204cabd9964  styles.css
+          CHECKSUMS
 
           if ! gh release view "$version" --repo "$GH_REPO" > /dev/null 2>&1; then
             gh release create "$version" "${assets[@]}" --repo "$GH_REPO" \
               --target "$GITHUB_SHA" --title "BigCaseManager3 $version" \
               --notes "公开安装包。在空白笔记库中启用后，可自行建立事项和人员。"
+          else
+            mkdir previous
+            gh release download "$version" --repo "$GH_REPO" --dir previous --pattern main.js
+            if ! cmp -s main.js previous/main.js; then
+              gh release upload "$version" main.js --repo "$GH_REPO" --clobber
+            fi
           fi
 
           mkdir downloaded
